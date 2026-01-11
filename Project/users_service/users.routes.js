@@ -108,8 +108,8 @@ router.get('/users/:id', async function (req, res) {
         }
 
         // Fetch the user document by id from the users collection.
-        const user = await user.findOne({ id: userId });
-        if (!user) {
+        const userDoc = await user.findOne({ id: userId });
+        if (!userDoc) {
             return res.status(404).json({ id: -1, message: 'user not found' });
         }
 
@@ -129,13 +129,13 @@ router.get('/users/:id', async function (req, res) {
 
         // Return the exact response shape required by the assignment.
         return res.json({
-            first_name: user.first_name,
-            last_name: user.last_name,
-            id: user.id,
+            first_name: userDoc.first_name,
+            last_name: userDoc.last_name,
+            id: userDoc.id,
             total: total
         });
     } catch (err) {
-        return res.status(500).json({ id: -1, message: 'failed to get user details' });
+        return res.status(500).json({ id: -1, message: 'failed to get user details', details: err.message });
     }
 });
 
