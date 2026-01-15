@@ -1,18 +1,35 @@
 'use strict';
 
+/**
+ * Logs Service Routes
+ * 
+ * Handles centralized logging using Pino with MongoDB persistence.
+ * Implements a custom stream (MongoLogStream) that saves Pino logs directly to MongoDB.
+ * 
+ * Routes:
+ * - POST /internal/logs - Receive log events from other services
+ * - GET /logs - Retrieve all logs (for graders/debugging)
+ */
+
 const express = require('express');
 const router = express.Router();
 
 const pino = require('pino');
-
-// IMPORTANT:
-// This model should allow saving dynamic log fields.
-// The Jump Start PDF suggests a schema with strict:false, minimize:false, timestamps:true, collection:'logs'. :contentReference[oaicite:3]{index=3}
 const Log = require('./logs.model');
 
-// Pino writes one JSON log line per write().
-// This stream parses that JSON line and inserts it into MongoDB (logs collection). :contentReference[oaicite:4]{index=4}
+/**
+ * MongoLogStream Class
+ * 
+ * Custom writable stream for Pino that saves logs directly to MongoDB.
+ * Pino writes one JSON log line per write() call.
+ * This stream parses that JSON line and inserts it into the logs collection.
+ */
 class MongoLogStream {
+    /**
+     * Write method called by Pino for each log entry
+     * @param {Buffer|string} chunk - Log data from Pino
+     * @returns {boolean} Always returns true to indicate successful write
+     */
     write(chunk) {
         const line = String(chunk).trim();
 
@@ -41,7 +58,7 @@ class MongoLogStream {
 }
 
 // Create a shared Pino instance that writes directly to MongoDB via MongoLogStream.
-// This matches the Jump Start pattern: pino(options, new MongoLogStream()). :contentReference[oaicite:5]{index=5}
+// This matches the Jump Start pattern: pino(options, new MongoLogStream()).
 const logger = pino(
     {
         level: process.env.LOG_LEVEL || 'info',
@@ -51,7 +68,11 @@ const logger = pino(
     new MongoLogStream()
 );
 
-// Helper: normalize incoming level to a Pino method name.
+/**
+ * Helper: Normalize incoming log level to a valid Pino method name
+ * @param {string} level - Log level from request
+ * @returns {string} Valid Pino level (error/warn/info/debug), defaults to 'info'
+ */
 function normalizeLevel(level) {
     if (level === 'error' || level === 'warn' || level === 'info' || level === 'debug') {
         return level;
@@ -59,9 +80,30 @@ function normalizeLevel(level) {
     return 'info';
 }
 
-// POST /internal/logs
-// This endpoint receives a log event from other services.
-// We use Pino to emit the log; MongoLogStream is responsible for saving it in MongoDB.
+/**
+ * POST /internal/logs
+ * 
+ * Receives log events from other microservices and persists them to MongoDB.
+ * Uses Pino for structured logging; MongoLogStream saves to database.
+ * 
+ * Validates required fields:
+ * - endpoint (required)
+ * - method (required)
+ * - message (required)
+ * 
+ * @route POST /internal/logs
+ * @param {Object} req.body - Log data
+ * @param {string} [req.body.level='info'] - Log level (error/warn/info/debug)
+ * @param {string} [req.body.service='unknown'] - Service name
+ * @param {string} req.body.endpoint - API endpoint
+ * @param {string} req.body.method - HTTP method
+ * @param {number} [req.body.statusCode] - HTTP status code
+ * @param {string} req.body.message - Log message
+ * @param {string} [req.body.timestamp] - Optional timestamp (defaults to now)
+ * @returns {Object} 200 - Created log entry
+ * @returns {Object} 400 - Validation error (missing required fields)
+ * @returns {Object} 500 - Server error
+ */
 router.post('/internal/logs', async function (req, res) {
     try {
         const level = normalizeLevel(req.body.level || 'info');
@@ -70,7 +112,7 @@ router.post('/internal/logs', async function (req, res) {
         // Pino will serialize this object to JSON; MongoLogStream will parse it and save it as the DB doc.
         const logData = {
             // Use the "time" field that Pino commonly writes; your schema should accept it.
-            // If you prefer, you can also include a timestamp field; the PDF uses timestamps config on schema. :contentReference[oaicite:6]{index=6}
+            // If you prefer, you can also include a timestamp field; the PDF uses timestamps config on schema.
             timestamp: req.body.timestamp ? new Date(req.body.timestamp).toISOString() : new Date().toISOString(),
 
             // Keep the fields expected by your system.
@@ -95,12 +137,20 @@ router.post('/internal/logs', async function (req, res) {
         // Return what we emitted (this is your "logDoc" as created by Pino).
         return res.json(logData);
     } catch (err) {
-        return res.status(500).json({ id: -1, message: 'failed to write log' });
+        return res.status(500).json({ id: -1, message: 'failed to write log' , error: err.message });
     }
 });
 
-// GET /api/logs
-// For graders: return all logs from the DB.
+/**
+ * GET /logs
+ * 
+ * Retrieves all log entries from the database.
+ * Primarily for graders and debugging purposes.
+ * 
+ * @route GET /logs (also accessible at /api/logs)
+ * @returns {Array} 200 - Array of log entries sorted by time (newest first)
+ * @returns {Object} 500 - Server error
+ */
 router.get('/logs', async function (req, res) {
     try {
         // If your logs are stored as Pino objects, the time field might be "time".

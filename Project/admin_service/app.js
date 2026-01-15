@@ -32,15 +32,21 @@ app.use(function (err, req, res, next) {
     res.status(500).json({ id: errorObj.id || -1, message: errorObj.message || 'internal server error' });
 });
 
-//DB connection
-db.connectDB(serviceName).catch(function (err) {
-    console.error(err);
-    process.exit(1);
-});
+// Connect to MongoDB Atlas for this process (disabled in test mode).
+if (process.env.NODE_ENV !== 'test') {
+    db.connectDB(serviceName).catch(function (err) {
+        console.error(err);
+        process.exit(1);
+    });
+}
 
 const port = Number(process.env.ADMIN_PORT || process.env.PORT || 3003);
 
-//Listen on port 3003
-app.listen(port, function () {
-    console.log(serviceName + ': listening on port ' + port);
-});
+//Listen on port 3003 (only when not testing)
+if (require.main === module) {
+    app.listen(port, function () {
+        console.log(serviceName + ': listening on port ' + port);
+    });
+}
+
+module.exports = app;

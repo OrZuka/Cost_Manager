@@ -1,39 +1,63 @@
 'use strict';
 
+/**
+ * Costs Service Routes
+ * 
+ * Handles cost-related operations:
+ * - POST /api/add - Add a new cost item
+ * - GET /api/report - Generate monthly cost report (with Computed Pattern caching)
+ */
+
 const express = require('express');
 const router = express.Router();
 
 const mongoose = require('mongoose');
 
-// Load both models (cost and report) from a single combined models file.
-const models = require('./costs.model');
-const cost = models.cost;
-const report = models.report;
+// Load both models (cost and report) from a different models file.
+const reportModel = require('./costs.model');
+const costUsersModel = require('../models/usersCosts.models');
+const cost = costUsersModel.cost;
+const report = reportModel.report;
+const users = costUsersModel.user;
 
 // Shared log client that sends logs to logs-service over HTTP.
 const logClient = require('../logclient');
 
 const serviceName = 'costs-service';
 
-// Helper: verify that a value is a string and not empty after trimming spaces.
+/**
+ * Helper: Verify that a value is a string and not empty after trimming spaces
+ * @param {*} x - Value to check
+ * @returns {boolean} True if x is a non-empty string
+ */
 function isNonEmptyString(x) {
     return typeof x === 'string' && x.trim().length > 0;
 }
 
-// Helper: convert an input to a Number.
-// Returns null if conversion fails (NaN/Infinity/non-numeric strings).
+/**
+ * Helper: Convert an input to a Number
+ * @param {*} x - Value to convert
+ * @returns {number|null} Number if valid, null if conversion fails (NaN/Infinity/non-numeric)
+ */
 function toNumber(x) {
     const n = Number(x);
     return Number.isFinite(n) ? n : null;
 }
 
-// Helper: ensure category matches one of the required categories from the assignment.
+/**
+ * Helper: Ensure category matches one of the required categories from the assignment
+ * @param {string} cat - Category to validate
+ * @returns {boolean} True if category is valid (food, health, housing, sports, education)
+ */
 function isValidCategory(cat) {
     return cat === 'food' || cat === 'health' || cat === 'housing' || cat === 'sports' || cat === 'education';
 }
 
-// Helper: parse a date if provided, otherwise use the current time.
-// Returns null when a date value is provided but invalid, so the caller can fail validation.
+/**
+ * Helper: Parse a date if provided, otherwise use the current time
+ * @param {*} x - Date value to parse
+ * @returns {Date|null} Date object if valid, null if invalid, current date if not provided
+ */
 function toDateOrNow(x) {
     if (x === undefined || x === null || x === '') {
         // Client did not send a date, so the server uses the request time.
@@ -44,28 +68,42 @@ function toDateOrNow(x) {
     return isNaN(d.getTime()) ? null : d;
 }
 
-// Helper: build the starting Date of a given month (inclusive).
-// Example: monthStart(2026, 1) => 2026-01-01 00:00:00.000
+/**
+ * Helper: Build the starting Date of a given month (inclusive)
+ * @param {number} year - Year (e.g., 2026)
+ * @param {number} month - Month (1-12)
+ * @returns {Date} Start of month (e.g., 2026-01-01 00:00:00.000)
+ */
 function monthStart(year, month) {
     return new Date(year, month - 1, 1, 0, 0, 0, 0);
 }
 
-// Helper: build the start Date of the next month (exclusive end boundary).
-// Using an exclusive end boundary avoids issues with different month lengths.
+/**
+ * Helper: Build the start Date of the next month (exclusive end boundary)
+ * @param {number} year - Year
+ * @param {number} month - Month (1-12)
+ * @returns {Date} Start of next month (exclusive boundary)
+ */
 function monthEndExclusive(year, month) {
     return new Date(year, month, 1, 0, 0, 0, 0);
 }
 
-// Helper: determine if (year, month) is a month that has fully passed.
-// We treat it as "past" when the month’s end is strictly before the current time.
+/**
+ * Helper: Determine if (year, month) is a month that has fully passed
+ * @param {number} year - Year
+ * @param {number} month - Month (1-12)
+ * @returns {boolean} True if month has ended
+ */
 function isPastMonth(year, month) {
     const now = new Date();
     // We compute start/end via helpers to keep the logic consistent.
     return monthEndExclusive(year, month).getTime() < now.getTime();
 }
 
-// Helper: create the "costs" array shape required by the assignment response.
-// Each category appears even if it has no items.
+/**
+ * Helper: Create the "costs" array shape required by the assignment response
+ * @returns {Array} Array with all 5 categories initialized to empty arrays
+ */
 function buildEmptycosts() {
     return [
         { food: [] },
@@ -76,8 +114,12 @@ function buildEmptycosts() {
     ];
 }
 
-// Helper: push a cost item into the correct category bucket inside "grouped".
-// grouped is an array like [{food:[]}, {education:[]}, ...], so we search for the right object.
+/**
+ * Helper: Push a cost item into the correct category bucket inside "grouped"
+ * @param {Array} grouped - Array of category objects
+ * @param {string} category - Category name
+ * @param {Object} item - Cost item to add
+ */
 function addToGroupedcosts(grouped, category, item) {
     for (let i = 0; i < grouped.length; i++) {
         const obj = grouped[i];
@@ -88,8 +130,29 @@ function addToGroupedcosts(grouped, category, item) {
     }
 }
 
-// POST /api/add
-// Adds a new cost document to the costs collection.
+/**
+ * POST /api/add
+ * 
+ * Adds a new cost document to the costs collection.
+ * 
+ * Validates:
+ * - User existence (assignment Q&A #11 requirement)
+ * - All required fields (userid, sum, category, description)
+ * - No backdating (createdAt must not be in the past)
+ * - Category must be one of 5 valid categories
+ * 
+ * @route POST /api/add
+ * @param {Object} req.body - Cost data
+ * @param {number} req.body.userid - User ID
+ * @param {number} req.body.sum - Cost amount
+ * @param {string} req.body.category - Cost category (food/health/housing/sports/education)
+ * @param {string} req.body.description - Cost description
+ * @param {string} [req.body.createdAt] - Optional timestamp (defaults to now)
+ * @returns {Object} 200 - Created cost document
+ * @returns {Object} 400 - Validation error
+ * @returns {Object} 404 - User not found
+ * @returns {Object} 500 - Server error
+ */
 router.post('/add', async function (req, res) {
     // Log that the endpoint was accessed (separate from the per-request middleware log).
     await logClient.sendEndpointAccessLog(serviceName, req, 'endpoint accessed: POST /api/add (cost)');
@@ -124,6 +187,11 @@ router.post('/add', async function (req, res) {
             return res.status(400).json({ id: -1, message: 'invalid createdAt' });
         }
 
+        const userExists = await users.findOne({ id: userid });
+        if (!userExists) {
+            return res.status(404).json({ id: -1, message: 'user not found' });
+        }
+
         // Assignment rule: do not allow adding costs with dates in the past.
         // Note: if createdAt defaults to now, this check passes.
         if (createdAt.getTime() < new Date().getTime()) {
@@ -144,12 +212,26 @@ router.post('/add', async function (req, res) {
         return res.json(created);
     } catch (err) {
         // Return error JSON object with {id,message} as required.
-        return res.status(500).json({ id: -1, message: 'failed to add cost' });
+        return res.status(500).json({ id: -1, message: 'failed to add cost' , error: err.message });
     }
 });
 
-// GET /api/report?id=&year=&month=
-// Returns the monthly report grouped by categories, and caches reports for past months.
+/**
+ * GET /api/report
+ * 
+ * Returns the monthly cost report grouped by categories.
+ * Implements Computed Pattern: caches reports for past months for better performance.
+ * 
+ * Query Parameters:
+ * @param {number} id - User ID
+ * @param {number} year - Year (1970-3000)
+ * @param {number} month - Month (1-12)
+ * 
+ * @route GET /api/report?id=&year=&month=
+ * @returns {Object} 200 - Cost report with structure: {userid, year, month, costs}
+ * @returns {Object} 400 - Validation error (invalid parameters)
+ * @returns {Object} 500 - Server error
+ */
 router.get('/report', async function (req, res) {
     // Log that the endpoint was accessed (separate from the per-request middleware log).
     await logClient.sendEndpointAccessLog(serviceName, req, 'endpoint accessed: GET /api/report');
@@ -171,10 +253,47 @@ router.get('/report', async function (req, res) {
             return res.status(400).json({ id: -1, message: 'invalid month' });
         }
 
-        // Computed pattern: for past months, reuse cached report if it exists.
+        /*
+         * ====================================================================
+         * COMPUTED DESIGN PATTERN IMPLEMENTATION
+         * ====================================================================
+         * 
+         * This endpoint implements the Computed Pattern for efficient report generation.
+         * 
+         * CONCEPT:
+         * Monthly cost reports are expensive to compute (requires aggregation and grouping
+         * of potentially many cost documents). However, once a month is over, its data
+         * becomes immutable - no new costs can be added to past months (enforced by the
+         * 'no backdating' rule in POST /api/add).
+         * 
+         * IMPLEMENTATION:
+         * 1. For PAST months (months that have already ended):
+         *    - First request: Compute the report from scratch by querying and aggregating
+         *      all costs for that month from the costs collection.
+         *    - After computation: Cache the complete report in the reports collection.
+         *    - Subsequent requests: Return the cached report directly from the reports
+         *      collection without recomputing - this is significantly faster.
+         * 
+         * 2. For CURRENT/FUTURE months:
+         *    - Always compute fresh from the costs collection on every request.
+         *    - Never cache, because new costs may still be added to these months.
+         * 
+         * BENEFITS:
+         * - Improved performance: Cached reports avoid expensive repeated computations.
+         * - Consistency: Past data never changes, so cached reports remain accurate.
+         * - Scalability: As the database grows, old reports remain fast to retrieve.
+         * 
+         * TRADEOFF:
+         * - Extra storage: Each computed report is stored in the reports collection.
+         * - This is acceptable because storage is cheap compared to computation time.
+         * ====================================================================
+         */
+        
+        // Step 1: Check if this is a past month and if a cached report exists
         if (isPastMonth(year, month)) {
             const cached = await report.findOne({ userid: userid, year: year, month: month });
             if (cached) {
+                // Return cached report (Computed Pattern - reuse precomputed result)
                 return res.json({
                     userid: cached.userid,
                     year: cached.year,
@@ -184,7 +303,7 @@ router.get('/report', async function (req, res) {
             }
         }
 
-        // Compute report from costs collection by filtering on createdAt month range.
+        // Step 2: Compute report from costs collection by filtering on createdAt month range
         const start = monthStart(year, month);
         const end = monthEndExclusive(year, month);
 
@@ -219,7 +338,7 @@ router.get('/report', async function (req, res) {
             costs: grouped
         };
 
-        // Save only if the requested month is in the past (computed cache).
+        // Step 3: Save computed report to cache if this is a past month
         if (isPastMonth(year, month)) {
             await report.create({
                 userid: userid,
@@ -234,7 +353,7 @@ router.get('/report', async function (req, res) {
 
         return res.json(result);
     } catch (err) {
-        return res.status(500).json({ id: -1, message: 'failed to generate report' });
+        return res.status(500).json({ id: -1, message: 'failed to generate report' ,error: err.message });
     }
 });
 

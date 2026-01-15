@@ -16,8 +16,17 @@ const developers = [
     { first_name: 'Shilat', last_name: 'Zrihen' }
 ];
 
-// GET /api/about
-// Returns a JSON document that describes the team members (first + last names only).
+/**
+ * GET /api/about
+ * 
+ * Returns a JSON document that describes the team members.
+ * This endpoint provides information about the development team (first and last names only).
+ * No database access is required as team information is embedded in the code.
+ * 
+ * @route GET /api/about
+ * @returns {Array} 200 - Array of team member objects with first_name and last_name
+ * @returns {Object} 500 - Error object with id and message fields
+ */
 router.get('/about', async function (req, res) {
     // Log that the endpoint was accessed (this is required in addition to per-request logging).
     await logClient.sendEndpointAccessLog(serviceName, req, 'endpoint accessed: GET /api/about');
@@ -27,7 +36,7 @@ router.get('/about', async function (req, res) {
         return res.json(developers);
     } catch (err) {
         // Return error JSON object with {id,message} as required by the assignment.
-        return res.status(500).json({ id: -1, message: 'failed to get developers list' });
+        return res.status(500).json({ id: -1, message: 'failed to get developers list' , error: err.message });
     }
 });
 

@@ -1,7 +1,7 @@
 'use strict';
 
 const mongoose = require('mongoose');
-
+//Logs schema
 const logSchema = new mongoose.Schema(
     {
         timestamp: { type: Date, required: true },
@@ -17,4 +17,7 @@ const logSchema = new mongoose.Schema(
 
 logSchema.index({ timestamp: -1 });
 
-module.exports = mongoose.model('logs', logSchema);
+// Guard against model re-definition in dev/test environments.
+const logs = mongoose.models.logs || mongoose.model('logs', logSchema);
+
+module.exports = logs;
