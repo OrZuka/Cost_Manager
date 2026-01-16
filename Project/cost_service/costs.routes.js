@@ -167,8 +167,10 @@ router.post('/add', async function (req, res) {
         // sum can arrive as number or string; convert to Number for validation first.
         const sumNumber = toNumber(req.body.sum);
 
+        const currentTime=new Date();
         // If createdAt not provided, use now; if provided and invalid, returns null.
         const createdAt = toDateOrNow(req.body.createdAt);
+
 
         // Validation: required fields and correct types.
         if (!isNonEmptyString(description)) {
@@ -187,16 +189,19 @@ router.post('/add', async function (req, res) {
             return res.status(400).json({ id: -1, message: 'invalid createdAt' });
         }
 
+        // do not allow adding costs with dates in the past.
+        // Note: if createdAt defaults to now, this check passes.
+        if (createdAt.getTime() < currentTime.getTime()) {
+            return res.status(400).json({ id: -1, message: 'cannot add costs with past dates' });
+        }
+
         const userExists = await users.findOne({ id: userid });
         if (!userExists) {
             return res.status(404).json({ id: -1, message: 'user not found' });
         }
 
-        // Assignment rule: do not allow adding costs with dates in the past.
-        // Note: if createdAt defaults to now, this check passes.
-        if (createdAt.getTime() < new Date().getTime()) {
-            return res.status(400).json({ id: -1, message: 'cannot add costs with past dates' });
-        }
+
+
 
         // Create the document in MongoDB.
         // Decimal128 is used to represent "Double" reliably in Mongoose.
