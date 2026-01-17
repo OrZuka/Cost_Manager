@@ -64,7 +64,7 @@ if (process.env.NODE_ENV !== 'test') {
     });
 }
 
-const port = Number(process.env.COSTS_PORT || process.env.PORT || 3001);
+const port = Number(process.env.PORT || process.env.COSTS_PORT || 3001);
 
 /**
  * Start server

@@ -58,7 +58,7 @@ if (process.env.NODE_ENV !== 'test') {
     });
 }
 
-const port = Number(process.env.LOGS_PORT || 3002);
+const port = Number(process.env.PORT || process.env.LOGS_PORT || 3002);
 
 /**
  * Start server

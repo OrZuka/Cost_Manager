@@ -66,7 +66,7 @@ if (process.env.NODE_ENV !== 'test') {
  * Priority: USERS_PORT > PORT > default 3000
  * Allows flexible port assignment via environment variables
  */
-const port = Number(process.env.USERS_PORT || process.env.PORT || 3000);
+const port = Number(process.env.PORT || process.env.USERS_PORT ||  3000);
 
 /**
  * Server initialization

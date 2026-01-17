@@ -40,7 +40,7 @@ if (process.env.NODE_ENV !== 'test') {
     });
 }
 
-const port = Number(process.env.ADMIN_PORT || process.env.PORT || 3003);
+const port = Number(process.env.PORT ||process.env.ADMIN_PORT || 3003);
 
 //Listen on port 3003 (only when not testing)
 if (require.main === module) {
