@@ -15,7 +15,7 @@ const logClient = require('../logclient');
  * Middleware: HTTP request logger using Pino
  * Logs all incoming requests to MongoDB for monitoring and debugging
  */
-app.use(logClient.requestLogger('users-service'));
+app.use(logClient.requestLogger(serviceName));
 
 /**
  * Middleware: Parse incoming JSON request bodies

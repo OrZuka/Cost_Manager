@@ -14,7 +14,7 @@ const app = express();
 const logClient = require('../logclient');
 
 //Using HTTP request logger
-app.use(logClient.requestLogger('users-service'));
+app.use(logClient.requestLogger(serviceName));
 app.use(express.json());
 
 // Basic request trace (you will replace with Pino->Mongo logging middleware).

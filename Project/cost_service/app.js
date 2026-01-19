@@ -38,7 +38,7 @@ app.use(function (req, res, next) {
 });
 
 // Apply HTTP request logger middleware
-app.use(logClient.requestLogger('cost-service'));
+app.use(logClient.requestLogger(serviceName));
 
 // Mount routes: cost operations (add cost, monthly report)
 app.use('/api', costsRoutes);
