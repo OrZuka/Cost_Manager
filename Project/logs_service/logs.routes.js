@@ -210,7 +210,7 @@ function requestLoggerInternal(serviceName) {
 }
 
 // Health check (Render). No logging, no DB.
-router.get('/health', function (req, res) {
+router.get('/api/health', function (req, res) {
     return res.status(200).json({ status: 'ok', service: "logs-service" });
 });
 
