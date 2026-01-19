@@ -35,7 +35,6 @@ app.use(express.json());
  * - /api/logs - GET endpoint for retrieving logs (grader/debugging)
  * - /internal/logs - POST endpoint for receiving logs from other services
  */
-app.use('/api', logsRoutes);
 app.use('/', logsRoutes);
 
 /**

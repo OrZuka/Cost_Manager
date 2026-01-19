@@ -13,6 +13,8 @@
 
 const express = require('express');
 const router = express.Router();
+router.use(requestLoggerInternal("logs-service"));
+
 
 const pino = require('pino');
 const Log = require('./logs.model');
@@ -143,24 +145,69 @@ router.post('/internal/logs', async function (req, res) {
 
 /**
  * GET /logs
- * 
+ *
  * Retrieves all log entries from the database.
  * Primarily for graders and debugging purposes.
- * 
+ * Logs the endpoint entry access
+ *
  * @route GET /logs (also accessible at /api/logs)
  * @returns {Array} 200 - Array of log entries sorted by time (newest first)
  * @returns {Object} 500 - Server error
  */
-router.get('/logs', async function (req, res) {
+router.get('/api/logs', async function (req, res) {
+    // Endpoint access log
+    const endpointAccessLogData = {
+        timestamp: new Date().toISOString(),
+        level: 'info',
+        service: 'logs-service',
+        endpoint: req.originalUrl || req.url,
+        method: req.method,
+        message: 'endpoint accessed: GET /api/logs'
+    };
+    logger.info(endpointAccessLogData, endpointAccessLogData.message);
+
     try {
-        // If your logs are stored as Pino objects, the time field might be "time".
-        // Sort by time if exists; fallback sort behavior depends on your schema.
         const logs = await Log.find({}).sort({ time: -1 });
-        return res.json(logs);
+        return res.status(200).json(logs);
     } catch (err) {
         return res.status(500).json({ id: -1, message: 'failed to read logs' });
     }
 });
+
+// Local request-log writer for logs-service (DO NOT call logclient here)
+function sendRequestLogInternal(serviceName, req, res, durationMs) {
+    const logData = {
+        timestamp: new Date().toISOString(),
+        level: "info",
+        service: serviceName,
+        method: req.method,
+        endpoint: req.originalUrl || req.url,
+        statusCode: res.statusCode,
+        message: "http request received (duration " + durationMs + "ms)",
+    };
+
+    // This should go through your Pino logger that writes to Mongo
+    logger.info(logData, logData.message);
+}
+
+// Express middleware factory: logs every HTTP request when the response finishes.
+function requestLoggerInternal(serviceName) {
+    return function (req, res, next) {
+        // Skip logging for health checks and internal logging (Render / monitoring)
+        if (req.path === "/api/health" || req.originalUrl === "/api/health" || req.originalUrl === "/internal/logs") {
+            return next();
+        }
+
+        const startedAt = Date.now();
+        //Invoking log function after request is processed
+        res.on("finish", function () {
+            const durationMs = Date.now() - startedAt;
+            sendRequestLogInternal(serviceName, req, res, durationMs);
+        });
+
+        next();
+    };
+}
 
 // Health check (Render). No logging, no DB.
 router.get('/health', function (req, res) {
