@@ -200,5 +200,10 @@ router.get('/users/:id', async function (req, res) {
   }
 });
 
+// Health check (Render). No logging, no DB.
+router.get('/health', function (req, res) {
+    return res.status(200).json({ status: 'ok', service: serviceName });
+});
+
 // Export the router to be mounted in the main application
 module.exports = router;

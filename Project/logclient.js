@@ -75,9 +75,14 @@ function sendEndpointAccessLog(serviceName, req, message) {
 // Express middleware factory: logs every HTTP request when the response finishes.
 function requestLogger(serviceName) {
     return function (req, res, next) {
+        // Skip logging for health checks (Render / monitoring)
+        if (req.path === "/api/health" || req.originalUrl === "/api/health") {
+            return next();
+        }
+
         const startedAt = Date.now();
 
-        res.on('finish', function () {
+        res.on("finish", function () {
             const durationMs = Date.now() - startedAt;
             sendRequestLog(serviceName, req, res, durationMs);
         });
@@ -85,6 +90,7 @@ function requestLogger(serviceName) {
         next();
     };
 }
+
 
 module.exports = {
     sendLog: sendLog,

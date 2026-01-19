@@ -362,4 +362,9 @@ router.get('/report', async function (req, res) {
     }
 });
 
+// Health check (Render). No logging, no DB.
+router.get('/health', function (req, res) {
+    return res.status(200).json({ status: 'ok', service: serviceName });
+});
+
 module.exports = router;
